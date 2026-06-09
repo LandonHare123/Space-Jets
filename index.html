@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Jets
+    </title>
+    <style>
+        body{
+            background: blueviolet;
+            color: black;
+        }
+        hr{
+            margin-bottom: 25px;
+
+        }
+        #gameBody{
+            margin-left: 45px;
+
+        }
+        #gameScreen{
+            list-style: none;
+            color: white;
+            
+        }
+        #gameScreen li{
+            white-space: pre;
+            font-family: "Courier New";
+            background-color: black;
+            
+        }
+        #row1{
+            display: flex;
+            align-items: center;
+            white-space: pre;
+        }
+        #Toggle{
+            margin-left: 45px;
+            margin-right: 50px;
+            color: green;
+            border-radius: 5px;
+            border-color: black;
+            padding: 5px;
+            font-size: 36px;
+            margin-bottom: 25px;
+        }
+        #gameover{
+            color: red;
+            font-size: 36px;
+        }
+        .scoreboard{
+            margin-left: 25px;
+            font-size: 24px;
+            font-weight: bold;
+            
+
+        }
+        .scoreboardval{
+            margin-right: 40px;
+            margin-left: 5px;
+            font-size: 24px;
+            font-weight: bold;
+            
+        }
+        .cur{
+                color: yellow;
+
+            }
+        .high{
+                color: greenyellow;
+            }   
+        .divider{
+                border-color: black;
+
+        }
+        
+
+
+    </style>
+</head>
+<body>
+    <h1>Welcome to Space Jets</h1>
+    <hr class = "divider">
+    <div id = "row1">
+        <button id="Toggle">Start</button>
+        <p id = "highscore" class="scoreboard high">High Score:</p>
+        <p id = "highscorenum" class="scoreboard val high"></p>
+        <p id = "currentscore" class="scoreboard cur">Current Score:</p>
+        <p id = "currentscorenum" class="scoreboardval cur"></p>
+        <p id = "gameover"></p>
+
+</div>
+    <hr class = "divider">
+    <p id="gameBody">
+        <ul id="gameScreen"></ul>
+    </p>
+    <script src="script1.js"></script>
+</body>
+</html> 
