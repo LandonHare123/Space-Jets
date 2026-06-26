@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Jets
+    </title>
+    <style>
+        body{
+            background: blueviolet;
+            color: black;
+        }
+        hr{
+            margin-bottom: 25px;
+
+        }
+        #gameBody{
+            margin-left: 45px;
+
+        }
+        #gameScreen{
+            list-style: none;
+            color: white;
+            
+        }
+        #gameScreen li{
+            white-space: pre;
+            font-family: "Courier New";
+            background-color: black;
+            
+        }
+        #row1{
+            display: flex;
+            align-items: center;
+            white-space: pre;
+        }
+        #Toggle{
+            margin-left: 45px;
+            margin-right: 50px;
+            color: green;
+            border-radius: 5px;
+            border-color: black;
+            padding: 5px;
+            font-size: 36px;
+            margin-bottom: 25px;
+        }
+        #gameover{
+            color: red;
+            font-size: 36px;
+        }
+        .scoreboard{
+            margin-left: 25px;
+            font-size: 24px;
+            font-weight: bold;
+            
+
+        }
+        .scoreboardval{
+            margin-right: 40px;
+            margin-left: 5px;
+            font-size: 24px;
+            font-weight: bold;
+            
+        }
+        .cur{
+                color: yellow;
+
+            }
+        .high{
+                color: greenyellow;
+            }   
+        .divider{
+                border-color: black;
+
+        }
+        #spacejets{
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+        #loginpage{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 100px;
+}
+        
+
+
+    </style>
+</head>
+<body>
+    <div id = "loginpage">
+    
+        <h2 id="loginmessage">Login</h2>
+    
+        <button id="login">Submit</button>
+    
+        <input type="text" name="username" id="user" />
+    <input type="text" name="password" id="pass" />
+    
+    <button id="create">Create Account</button>
+    </div>
+    
+    
+    
+    <div id = "spacejets"><h1>Welcome to Space Jets</h1>
+    <hr class = "divider">
+    <div id = "row1">
+        <button id="Toggle">Start</button>
+        <p id = "highscore" class="scoreboard high">High Score:</p>
+        <p id = "highscorenum" class="scoreboard val high"></p>
+        <p id = "currentscore" class="scoreboard cur">Current Score:</p>
+        <p id = "currentscorenum" class="scoreboardval cur"></p>
+        <p id = "gameover"></p>
+<button id="signout">Sign Out</button>
+</div>
+    <hr class = "divider">
+    <p id="gameBody">
+        <ul id="gameScreen"></ul>
+    </p>
+    </div>
+    <script src="js/frontend.js"></script>
+</body>
+</html> 
