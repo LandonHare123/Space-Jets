@@ -73,13 +73,38 @@
                 border-color: black;
 
         }
+        #spacejets{
+            display: none;
+            flex-direction: column;
+            align-items: center;
+        }
+        #loginpage{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin-top: 100px;
+}
         
 
 
     </style>
 </head>
 <body>
-    <h1>Welcome to Space Jets</h1>
+    <div id = "loginpage">
+    
+        <h2 id="loginmessage">Login</h2>
+    
+        <button id="login">Submit</button>
+    
+        <input type="text" name="username" id="user" />
+    <input type="text" name="password" id="pass" />
+    
+    <button id="create">Create Account</button>
+    </div>
+    
+    
+    
+    <div id = "spacejets"><h1>Welcome to Space Jets</h1>
     <hr class = "divider">
     <div id = "row1">
         <button id="Toggle">Start</button>
@@ -88,12 +113,13 @@
         <p id = "currentscore" class="scoreboard cur">Current Score:</p>
         <p id = "currentscorenum" class="scoreboardval cur"></p>
         <p id = "gameover"></p>
-
+<button id="signout">Sign Out</button>
 </div>
     <hr class = "divider">
     <p id="gameBody">
         <ul id="gameScreen"></ul>
     </p>
-    <script src="script1.js"></script>
+    </div>
+    <script src="frontend.js"></script>
 </body>
 </html> 
