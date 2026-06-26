@@ -8,7 +8,7 @@ I decided to model my application layer encryption off of TLS, the protocol resp
 
 # Results
 As of now key exchange and the cipher functions work. Encryption is preformed on user login and highscore transporting.
-However key handling on the back end is currently unfinished due limitations on session handling.
+However key handling on the back end is currently unfinished due limitations with sessions.
 
 # For Next Time
 The plan is to expand on sessions on the front and backend to allow for more nuanced encryption application, as well as adding a database for keys
