@@ -1,7 +1,7 @@
 # Background
 I want to learn the basics of web development, the best way to do so is to practice
 
-irst I need to learn Javascript
+First I need to learn Javascript
 
 # Implementation
 It's easier to do one thing at a time than two so instead of coming up with a new idea I rewrote some old python code of mine.
