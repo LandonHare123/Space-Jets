@@ -4,16 +4,14 @@ import "dotenv/config";
 import mariadb from "mariadb";
 import https from "https";
 import fs from "fs";
-import crypto from "crypto";
+import crypto, { privateDecrypt } from "crypto";
 import Utf8Stream from "fs";
 import { deserialize } from "v8";
+import { networkInterfaces } from "os";
+import { decrypt } from "dotenv";
 
 //encryption
-let sharedSecret = null;
-let messageTranscript = "";
-let keyBuffer = null;
-const DHObject = crypto.createECDH("prime256v1");
-DHObject.generateKeys();
+
 //takes utf8 plaintext and arraybuffer key
 // returns base64 iv and ciphertext/authtag (appended together)
 async function encryptAESGCM(plaintext, key) {
@@ -47,7 +45,7 @@ function b64ToBytes(base64) {
 function toHex(bytes) {
   return Buffer.from(bytes).toString("hex");
 }
-//takes base64 ciphertext b64 passediv and arraybuffer key
+//takes base64 ciphertext b64 passediv and arraybuffer/buffer key
 //  returns utf8 strings
 function decryptAESGCM(ciphertext, passediv, key) {
   const ivBuffer = Buffer.from(passediv, "base64");
@@ -74,14 +72,14 @@ function decryptAESGCM(ciphertext, passediv, key) {
       ivLength: ivBuffer.length,
       ctLength: ctBuf.length,
       authTagLength: authBuf.length,
-      keyLength: keyBuffer.length,
+      keyLength: key.length,
 
       ivHex: toHex(ivBuffer),
       authTagHex: toHex(authBuf),
 
       keyFingerprint: crypto
         .createHash("sha256")
-        .update(Buffer.from(keyBuffer))
+        .update(Buffer.from(key))
         .digest("hex"),
 
       ctFingerprint: crypto.createHash("sha256").update(ctBuf).digest("hex"),
@@ -131,10 +129,16 @@ const server = https.createServer(
       });
 
       req.on("end", async () => {
-        const data = JSON.parse(body);
+        const dataEncrypted = JSON.parse(body);
+        const cookieJSON = parseCookie(req.headers.cookie);
+        const netKey = await getNetKey(cookieJSON.netSession);
+        const data = decryptAESGCM(
+          dataEncrypted.encrypted.frontciphertext,
+          dataEncrypted.encrypted.frontiv,
+          netKey,
+        );
         let responseData = {};
-        console.log(req.headers.cookie);
-        const logoutResult = await delSession(req.headers.cookie.split("=")[1]);
+        const logoutResult = await delLogSession(cookieJSON.logSession);
         if (logoutResult) {
           responseData.message = "logged out";
           res.setHeader(
@@ -151,7 +155,7 @@ const server = https.createServer(
       });
       return;
     }
-    if (req.method === "POST" && req.url === "/api/login") {
+    if (req.method === "POST" && req.url === "/api/account") {
       let body = "";
 
       req.on("data", (chunk) => {
@@ -159,29 +163,45 @@ const server = https.createServer(
       });
 
       req.on("end", async () => {
-        const data = JSON.parse(body);
+        const encryptedData = JSON.parse(body);
         let responseData = {};
+        const cookieJSON = parseCookie(req.headers.cookie);
+
+        const keys = await getNetAndUserKey(
+          cookieJSON.netSession,
+          cookieJSON.logSession,
+        );
+
+        const data = JSON.parse(
+          decryptAESGCM(
+            encryptedData.encrypted.frontciphertext,
+            encryptedData.encrypted.frontiv,
+            keys.netkey,
+          ),
+        );
+
+        const ptUser = decryptAESGCM(
+          data.Email.frontciphertext,
+          data.Email.frontiv,
+          keys.logkey,
+        );
+        const ptPass = decryptAESGCM(
+          data.Password.frontciphertext,
+          data.Password.frontiv,
+          keys.logkey,
+        );
 
         // login path
         if (data.Action === "login") {
-          const ptUser = decryptAESGCM(
-            data.Email.funcciphertext,
-            data.Email.funciv,
-            keyBuffer,
-          );
-          const ptPass = decryptAESGCM(
-            data.Password.funcciphertext,
-            data.Password.funciv,
-            keyBuffer,
-          );
-          //login function creates a session and returns the session id if successful, otherwise returns -1 for wrong pass and -2 for username dne
+          //login function validates credentials returns the user id if successful, otherwise returns -1 for wrong pass and -2 for username dne
           const loginResult = await login(ptUser, ptPass);
           if (loginResult != -1 && loginResult != -2) {
             responseData.message = "logged in";
-            const score = await getHighScore(loginResult);
+            await addUser2Session(loginResult, cookieJSON.logSession);
+            const score = await getHighScore(cookieJSON.logSession);
             responseData.curHighScore = await encryptAESGCM(
               score.toString(),
-              keyBuffer,
+              keys.logkey,
             );
             res.setHeader(
               "Set-Cookie",
@@ -197,27 +217,28 @@ const server = https.createServer(
           //if username dne is returned is creates an account and notifies the user, if
         } else if (data.Action === "create") {
           // create account path
-          const createResult = await login(data.Email, data.Password);
-          // doesnt = -2 means the username exists, if it also doesn't equal -1 then the account "logged in" on the server side, the session is deleted to "log out" on the server side
-          if (createResult != -2) {
+          const checkResult = await checkExistingUsers(ptUser);
+          if (checkResult) {
             responseData.message = "username exists";
-            if (createResult != -1) {
-              delSession(createResult);
-            }
-          } else if (createResult == -2) {
-            await createAccount(data.Email, data.Password);
-            responseData.message = "account created";
           } else {
-            console.log("errorcreate");
+            await createAccount(ptUser, ptPass);
+            responseData.message = "account created";
           }
+          //The tls session created when trying to make an account exists only for the creation, deleted immediately after and a new session is made when logging in
+          delLogSession(cookieJSON.logSession);
         } else {
           console.log("invalid action");
         }
 
         res.writeHead(200, { "Content-Type": "application/json" });
         responseData.success = true;
-        console.log(responseData);
-        res.end(JSON.stringify(responseData));
+        const encryptedresponseData = await encryptAESGCM(
+          JSON.stringify(responseData),
+          keys.netkey,
+        );
+        res.write(JSON.stringify({ encrypted: encryptedresponseData }));
+
+        res.end();
       });
 
       return;
@@ -229,17 +250,32 @@ const server = https.createServer(
         body += chunk;
       });
       req.on("end", async () => {
-        const data = JSON.parse(body);
-        console.log(data);
-        const score = decryptAESGCM(
-          data.scoreCT.funcciphertext,
-          data.scoreCT.funciv,
-          keyBuffer,
+        const encryptedData = JSON.parse(body);
+        const cookieJSON = parseCookie(req.headers.cookie);
+        const keys = await getNetAndUserKey(
+          cookieJSON.netSession,
+          cookieJSON.logSession,
         );
+        const data = JSON.parse(
+          decryptAESGCM(
+            encryptedData.encrypted.frontciphertext,
+            encryptedData.encrypted.frontiv,
+            keys.netkey,
+          ),
+        );
+
+        console.log(data);
+
+        const score = decryptAESGCM(
+          data.frontciphertext,
+          data.frontiv,
+          keys.logkey,
+        );
+        console.log(score);
 
         res.writeHead(200, { "Content-Type": "application/json" });
         const updateResult = await updateHighScore(
-          req.headers.cookie.split("=")[1],
+          cookieJSON.logSession,
           score,
         );
         if (updateResult) {
@@ -260,13 +296,34 @@ const server = https.createServer(
       req.on("data", (chunk) => {
         body += chunk.toString();
       });
-      req.on("end", () => {
-        messageTranscript += body;
-        const data = JSON.parse(body);
-
+      req.on("end", async () => {
+        const DHObject = crypto.createECDH("prime256v1");
+        DHObject.generateKeys();
+        let sharedSecret = null;
+        let messageTranscript = "";
+        let keyBuffer = null;
         let responseData = {};
+        messageTranscript += body;
+        let data = JSON.parse(body);
+        let cookieJSON = {};
+
+        try {
+          cookieJSON = parseCookie(req.headers.cookie);
+        } catch (error) {
+          console.log("error could not parse cookies");
+        }
+
+        if (data.hasOwnProperty("encrypted")) {
+          const netsessionKey = await getNetKey(cookieJSON.netSession);
+          const temp = decryptAESGCM(
+            data.encrypted.frontciphertext,
+            data.encrypted.frontiv,
+            netsessionKey,
+          );
+
+          data = JSON.parse(temp);
+        }
         if (data.Handshake === "ClientHello") {
-          console.log("reached");
           responseData.Handshake = "ServerHello";
           responseData.ServerPublicKey = DHObject.getPublicKey("base64"); // Send server's public key to client
           responseData.ServerRandom = crypto.randomUUID();
@@ -277,34 +334,33 @@ const server = https.createServer(
           messageTranscript += JSON.stringify(responseData);
 
           const salt = Buffer.from(messageTranscript, "utf8");
-          const info = Buffer.from("clientserverkey", "utf8");
-          crypto.hkdf(
-            "SHA-512",
-            sharedSecret,
-            salt,
-            info,
-            32,
-            (err, derivedKey) => {
-              if (err) throw err;
-              keyBuffer = derivedKey;
-            },
-          );
+          const info = Buffer.from(data.SessionType, "utf8");
+          keyBuffer = crypto.hkdfSync("SHA-512", sharedSecret, salt, info, 32);
+          if (data.SessionType == "net") {
+            const netSession = await createSessionNetwork(keyBuffer);
+            res.setHeader(
+              "Set-Cookie",
+              `netSession=${netSession}; HttpOnly; Path=/; SameSite=None; Secure`,
+            );
+          } else if (data.SessionType == "log") {
+            const logSession = await createSessionUser(null, keyBuffer);
+            await addLog2Net(logSession, cookieJSON.netSession);
+            res.setHeader(
+              "Set-Cookie",
+              `logSession=${logSession}; HttpOnly; Path=/; SameSite=None; Secure`,
+            );
+          } else {
+            console.log("session error");
+          }
         }
 
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify(responseData));
       });
+
       return;
     }
-    if (req.method === "POSt" && req.url === "/api/startup") {
-      let body = "";
-      req.on("data", (chunk) => {
-        body += chunk.toString();
-      });
-      req.on("end", () => {
-        const data = JSON.parse(body);
-      });
-    }
+
     // fallback 404 for unknown routes
     res.writeHead(404, { "Content-Type": "application/json" });
     return res.end(JSON.stringify({ error: "Not found" }));
@@ -336,7 +392,7 @@ async function login(username, password) {
     );
     if (dbRes.length > 0) {
       if (dbRes[0].password_hash == password) {
-        return createSession(dbRes[0].id);
+        return dbRes[0].id;
       } else {
         return -1;
       }
@@ -352,7 +408,7 @@ async function getUserId(sessionId) {
   const conn = await pool.getConnection();
   try {
     const dbRes = await conn.query(
-      "SELECT user_id FROM sessions WHERE session_hash = ?",
+      "SELECT user_id FROM logsessions WHERE session_hash = ?",
       [sessionId],
     );
     return dbRes[0].user_id;
@@ -362,14 +418,12 @@ async function getUserId(sessionId) {
 }
 async function getHighScore(sessionId) {
   const conn = await pool.getConnection();
-  console.log(sessionId);
 
   try {
     const dbRes = await conn.query(
-      "SELECT highscore FROM users JOIN sessions ON users.id = sessions.user_id WHERE session_hash = ?",
+      "SELECT highscore FROM users JOIN logsessions ON users.id = logsessions.user_id WHERE logsessions.session_hash = ?",
       [sessionId],
     );
-    console.log(dbRes);
     return dbRes[0].highscore;
   } finally {
     conn.release();
@@ -379,7 +433,7 @@ async function updateHighScore(sessionId, score) {
   const conn = await pool.getConnection();
   try {
     await conn.query(
-      "UPDATE users JOIN sessions ON users.id = sessions.user_id SET highscore = ? WHERE sessions.session_hash = ?",
+      "UPDATE users JOIN logsessions ON users.id = logsessions.user_id SET highscore = ? WHERE logsessions.session_hash = ?",
       [score, sessionId],
     );
     return true;
@@ -387,11 +441,10 @@ async function updateHighScore(sessionId, score) {
     conn.release();
   }
 }
-
-async function delSession(sessionId) {
+async function delLogSession(sessionId) {
   const conn = await pool.getConnection();
   try {
-    await conn.query("DELETE FROM sessions WHERE session_hash = ?", [
+    await conn.query("DELETE FROM logsessions WHERE session_hash = ?", [
       sessionId,
     ]);
     return true;
@@ -400,17 +453,105 @@ async function delSession(sessionId) {
   }
 }
 
-async function createSession(userId) {
+async function createSessionUser(userId, userKey) {
   const conn = await pool.getConnection();
+  const userKeyBuf = Buffer.from(userKey);
   try {
     const sessionId = crypto.randomUUID();
     await conn.query(
-      "INSERT INTO sessions (user_id, session_hash) VALUES (?, ?)",
-      [userId, sessionId],
+      "INSERT INTO logsessions (user_id, session_hash, logaeskey) VALUES (?, ?,?)",
+      [userId, sessionId, userKeyBuf],
     );
     return sessionId;
   } finally {
     conn.release();
   }
 }
-async function onConnect() {}
+async function createSessionNetwork(netKey) {
+  const conn = await pool.getConnection();
+  const netKeyBuf = Buffer.from(netKey);
+  try {
+    const sessionId = crypto.randomUUID();
+    await conn.query(
+      "INSERT INTO netsessions (netsessionid, netaeskey) VALUES (?,?)",
+      [sessionId, netKeyBuf],
+    );
+    return sessionId;
+  } finally {
+    conn.release();
+  }
+}
+async function getNetKey(netSession) {
+  const conn = await pool.getConnection();
+  try {
+    const netKey = await conn.query(
+      "SELECT netaeskey FROM netsessions WHERE netsessionid = ?",
+      [netSession],
+    );
+    return netKey[0].netaeskey;
+  } finally {
+    conn.release();
+  }
+}
+async function getNetAndUserKey(netsession, logsession) {
+  const conn = await pool.getConnection();
+  try {
+    const keys = await conn.query(
+      "SELECT netsessions.netaeskey, logsessions.logaeskey FROM netsessions JOIN logsessions ON netsessions.logsessionid = logsessions.session_hash WHERE netsessions.netsessionid = ?",
+      [netsession],
+    );
+    return { netkey: keys[0].netaeskey, logkey: keys[0].logaeskey };
+  } finally {
+    conn.release();
+  }
+}
+
+function parseCookie(cookieString) {
+  const cookieArray = cookieString.split("; ");
+  let cookieReturn = {};
+  for (const cook of cookieArray) {
+    const cookPair = cook.split("=");
+    cookieReturn[cookPair[0]] = cookPair[1];
+  }
+  return cookieReturn;
+}
+
+async function addUser2Session(userId, logsession) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.query(
+      "UPDATE logsessions SET user_id = ? WHERE logsessions.session_hash = ?",
+      [userId, logsession],
+    );
+  } finally {
+    conn.release();
+  }
+}
+async function addLog2Net(logsession, netsession) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.query(
+      "UPDATE netsessions SET logsessionid = ? WHERE netsessions.netsessionid = ?",
+      [logsession, netsession],
+    );
+  } finally {
+    conn.release();
+  }
+}
+
+async function checkExistingUsers(username) {
+  const conn = await pool.getConnection();
+  try {
+    const dbRes = await conn.query(
+      "SELECT EXISTS(SELECT 1 FROM users WHERE username = ?) AS exists_flag",
+      [username],
+    );
+    if (dbRes[0].exists_flag === 1) {
+      return true;
+    } else {
+      return false;
+    }
+  } finally {
+    conn.release();
+  }
+}

@@ -1,14 +1,14 @@
 # Background
-During the Spring 2026 semester I learned the fundamentals of encryption in my cryptology course.
-I decided to implement some of what I learned in this web app. Specifically secure key exchange and encryption 
+My last entry had working encryption functions however due to sessions being half implemented the backend could not handle multiple clients and certain api calls were still unencrypted. This entry resolves this
 
 # Implementation
-I used ECCDH for key exchange and AESGCM for encryption via the crypto module and web crypto api
-I decided to model my application layer encryption off of TLS, the protocol responsible for secure web connections. This would both teach me how encryption is performed on the internet and ensure my implementation, if done correctly, would be secure.
-
+Sessions are used to keep track of keys. The Sessions are created by the backend as part of the TLS Handshake and are set as cookies. The generated key is stored in the database with the session, on subsequent requests the session cookies are used to pull the keys from the db.
+There are two types of sessions a 'net' session which tracks the connecting client, and a 'log' session which tracks when a user is logged in and is used for authentication. 
+    A net session is created on connection and to a key which encrypts the entire json payload in a single string of ciphertext. 
+    A log session is created when a user clicks login or create account, the corresponding key is used to encrypt particularly sensitive data under the net session
+        
 # Results
-As of now key exchange and the cipher functions work. Encryption is preformed on user login and highscore transporting.
-However key handling on the back end is currently unfinished due limitations with sessions.
+The backend can now support multiple clients and only sends encrypted data. There are some stray sessions not being delete properly from the DB, this will be resolved next time
 
 # For Next Time
-The plan is to expand on sessions on the front and backend to allow for more nuanced encryption application, as well as adding a database for keys
+Determine the cause of these stray sessions and also add TTL/expiry so if a user doesn't signout properly the session is removed and if a client disconnects the network session terminates.
